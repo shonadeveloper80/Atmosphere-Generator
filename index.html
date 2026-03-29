@@ -1,0 +1,882 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MOODSYNTH — Neon Atmosphere Generator</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Crimson+Pro:ital,wght@0,300;1,300;1,400&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --a: #ff006e;
+    --b: #8338ec;
+    --c: #06d6a0;
+    --bg: #07070f;
+    --text: rgba(255,255,255,0.85);
+    --dim: rgba(255,255,255,0.25);
+    --glow-a: rgba(255,0,110,0.4);
+    --glow-b: rgba(131,56,236,0.4);
+    --glow-c: rgba(6,214,160,0.4);
+    --transition: 1.4s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body {
+    width: 100%; height: 100%;
+    overflow: hidden;
+    background: var(--bg);
+    font-family: 'Space Mono', monospace;
+    color: var(--text);
+    cursor: none;
+  }
+
+  /* Custom cursor */
+  #cursor {
+    position: fixed;
+    width: 12px; height: 12px;
+    border-radius: 50%;
+    background: var(--a);
+    box-shadow: 0 0 12px var(--a), 0 0 24px var(--a);
+    pointer-events: none;
+    z-index: 9999;
+    transform: translate(-50%, -50%);
+    transition: background 0.6s, box-shadow 0.6s, transform 0.1s;
+    mix-blend-mode: screen;
+  }
+
+  #cursor-ring {
+    position: fixed;
+    width: 36px; height: 36px;
+    border-radius: 50%;
+    border: 1px solid var(--a);
+    pointer-events: none;
+    z-index: 9998;
+    transform: translate(-50%, -50%);
+    transition: background 0.6s, border-color 0.6s, width 0.2s, height 0.2s, opacity 0.2s;
+    opacity: 0.5;
+  }
+
+  /* Canvas behind everything */
+  #canvas {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+  }
+
+  /* Ambient gradient orbs */
+  .orb {
+    position: fixed;
+    border-radius: 50%;
+    filter: blur(80px);
+    opacity: 0;
+    transition: all var(--transition);
+    pointer-events: none;
+    z-index: 1;
+  }
+
+  #orb1 { width: 60vw; height: 60vw; top: -20%; left: -20%; background: var(--a); }
+  #orb2 { width: 50vw; height: 50vw; bottom: -15%; right: -15%; background: var(--b); }
+  #orb3 { width: 40vw; height: 40vw; top: 30%; left: 30%; background: var(--c); }
+
+  /* Noise texture overlay */
+  .noise {
+    position: fixed;
+    inset: 0;
+    z-index: 2;
+    opacity: 0.04;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='1'/%3E%3C/svg%3E");
+    pointer-events: none;
+  }
+
+  /* Scanline */
+  .scan {
+    position: fixed;
+    inset: 0;
+    z-index: 3;
+    background: repeating-linear-gradient(
+      0deg, transparent, transparent 3px,
+      rgba(0,0,0,0.07) 3px, rgba(0,0,0,0.07) 4px
+    );
+    pointer-events: none;
+  }
+
+  /* Main layout */
+  .ui {
+    position: fixed;
+    inset: 0;
+    z-index: 10;
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+    padding: 0;
+  }
+
+  /* Header */
+  .header {
+    padding: 28px 40px 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+  }
+
+  .logo-text {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: clamp(2rem, 5vw, 3.5rem);
+    letter-spacing: 0.08em;
+    line-height: 1;
+    color: #fff;
+    text-shadow: 0 0 30px var(--a), 0 0 60px var(--a);
+    transition: text-shadow var(--transition);
+  }
+
+  .logo-sub {
+    font-size: 0.55rem;
+    letter-spacing: 0.35em;
+    color: var(--dim);
+    text-transform: uppercase;
+    margin-top: 4px;
+  }
+
+  .header-right {
+    text-align: right;
+    font-size: 0.6rem;
+    letter-spacing: 0.2em;
+    color: var(--dim);
+    text-transform: uppercase;
+    line-height: 1.8;
+  }
+
+  #live-time {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 1.4rem;
+    color: var(--a);
+    text-shadow: 0 0 10px var(--a);
+    letter-spacing: 0.1em;
+    transition: color var(--transition), text-shadow var(--transition);
+  }
+
+  /* Center — quote display */
+  .center {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 20px 40px;
+    text-align: center;
+    position: relative;
+  }
+
+  .mood-label {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: clamp(4rem, 15vw, 11rem);
+    letter-spacing: 0.04em;
+    line-height: 0.9;
+    color: transparent;
+    -webkit-text-stroke: 1px rgba(255,255,255,0.08);
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    white-space: nowrap;
+    transition: all var(--transition);
+    pointer-events: none;
+    user-select: none;
+  }
+
+  .mood-label.glow-active {
+    -webkit-text-stroke: 1px var(--a);
+    text-shadow: 0 0 60px var(--a), 0 0 120px var(--glow-a);
+    color: rgba(255,255,255,0.04);
+  }
+
+  .quote-wrap {
+    max-width: 560px;
+    position: relative;
+    z-index: 2;
+  }
+
+  .quote-mark {
+    font-family: 'Crimson Pro', serif;
+    font-size: 5rem;
+    line-height: 0.5;
+    color: var(--a);
+    opacity: 0.4;
+    display: block;
+    margin-bottom: 8px;
+    transition: color var(--transition);
+  }
+
+  .quote-text {
+    font-family: 'Crimson Pro', serif;
+    font-style: italic;
+    font-size: clamp(1rem, 2.5vw, 1.5rem);
+    line-height: 1.6;
+    color: rgba(255,255,255,0.75);
+    transition: all 0.5s;
+    min-height: 80px;
+  }
+
+  .quote-author {
+    margin-top: 16px;
+    font-size: 0.6rem;
+    letter-spacing: 0.25em;
+    color: var(--a);
+    text-transform: uppercase;
+    transition: color var(--transition);
+  }
+
+  /* Palette strip */
+  .palette-strip {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    margin-top: 28px;
+    flex-wrap: wrap;
+  }
+
+  .pal-chip {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+    cursor: pointer;
+  }
+
+  .pal-swatch {
+    width: 36px; height: 36px;
+    border-radius: 50%;
+    border: 1px solid rgba(255,255,255,0.1);
+    transition: transform 0.3s, box-shadow 0.3s;
+  }
+
+  .pal-chip:hover .pal-swatch { transform: scale(1.3); }
+
+  .pal-hex {
+    font-size: 0.5rem;
+    letter-spacing: 0.1em;
+    color: var(--dim);
+    transition: color 0.3s;
+  }
+
+  .pal-chip:hover .pal-hex { color: #fff; }
+
+  /* Bottom controls */
+  .bottom {
+    padding: 0 40px 32px;
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: end;
+    gap: 20px;
+  }
+
+  /* Mood selector */
+  .mood-grid {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .mood-btn {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.08);
+    color: var(--dim);
+    font-family: 'Space Mono', monospace;
+    font-size: 0.58rem;
+    letter-spacing: 0.15em;
+    padding: 8px 14px;
+    cursor: pointer;
+    text-transform: uppercase;
+    transition: all 0.3s;
+    white-space: nowrap;
+  }
+
+  .mood-btn:hover {
+    border-color: var(--a);
+    color: var(--a);
+    background: rgba(255,0,110,0.06);
+    box-shadow: 0 0 12px rgba(255,0,110,0.2);
+  }
+
+  .mood-btn.active {
+    border-color: var(--a);
+    color: #fff;
+    background: rgba(255,0,110,0.12);
+    box-shadow: 0 0 20px var(--glow-a), inset 0 0 12px rgba(255,0,110,0.06);
+  }
+
+  /* Center action */
+  .synth-btn {
+    background: transparent;
+    border: 1px solid rgba(255,255,255,0.15);
+    color: #fff;
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 0.9rem;
+    letter-spacing: 0.25em;
+    padding: 14px 28px;
+    cursor: pointer;
+    text-transform: uppercase;
+    transition: all 0.3s;
+    white-space: nowrap;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .synth-btn::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, var(--a), var(--b));
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+
+  .synth-btn:hover::before { opacity: 0.15; }
+
+  .synth-btn:hover {
+    border-color: var(--a);
+    box-shadow: 0 0 30px var(--glow-a), 0 0 60px rgba(255,0,110,0.1);
+    transform: translateY(-2px);
+  }
+
+  .synth-btn:active { transform: translateY(0); }
+
+  .synth-btn span { position: relative; z-index: 1; }
+
+  /* Right side — saved snaps */
+  .snaps-area {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 6px;
+  }
+
+  .snaps-label {
+    font-size: 0.55rem;
+    letter-spacing: 0.2em;
+    color: var(--dim);
+    text-transform: uppercase;
+    margin-bottom: 2px;
+  }
+
+  .snaps-row {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  .snap-dot {
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    border: 1px solid rgba(255,255,255,0.1);
+    cursor: pointer;
+    transition: transform 0.25s, box-shadow 0.25s;
+    position: relative;
+  }
+
+  .snap-dot:hover {
+    transform: scale(1.3);
+    box-shadow: 0 0 16px currentColor;
+  }
+
+  .snap-dot .snap-tooltip {
+    position: absolute;
+    bottom: 38px;
+    right: 0;
+    background: rgba(0,0,0,0.9);
+    border: 1px solid rgba(255,255,255,0.1);
+    padding: 6px 10px;
+    font-size: 0.5rem;
+    letter-spacing: 0.1em;
+    white-space: nowrap;
+    color: #fff;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s;
+  }
+
+  .snap-dot:hover .snap-tooltip { opacity: 1; }
+
+  /* Toast */
+  .toast {
+    position: fixed;
+    top: 30px;
+    left: 50%;
+    transform: translateX(-50%) translateY(-80px);
+    background: rgba(0,0,0,0.85);
+    border: 1px solid var(--a);
+    color: #fff;
+    font-size: 0.65rem;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    padding: 10px 24px;
+    z-index: 999;
+    transition: transform 0.4s cubic-bezier(0.16,1,0.3,1), border-color var(--transition);
+    box-shadow: 0 0 20px var(--glow-a);
+    white-space: nowrap;
+  }
+
+  .toast.show { transform: translateX(-50%) translateY(0); }
+
+  /* Particle ripple on click */
+  .ripple {
+    position: fixed;
+    border-radius: 50%;
+    border: 1px solid var(--a);
+    transform: translate(-50%, -50%) scale(0);
+    animation: ripple-out 0.8s ease-out forwards;
+    pointer-events: none;
+    z-index: 50;
+  }
+
+  @keyframes ripple-out {
+    to { transform: translate(-50%, -50%) scale(6); opacity: 0; }
+  }
+
+  /* Quote transition */
+  .quote-text.fading { opacity: 0; transform: translateY(6px); }
+  .quote-text.rising { opacity: 0; transform: translateY(-6px); }
+
+  /* Breathing animation for orbs */
+  @keyframes breathe {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.08); }
+  }
+
+  .orb { animation: breathe 8s ease-in-out infinite; }
+  #orb2 { animation-delay: -3s; animation-duration: 11s; }
+  #orb3 { animation-delay: -6s; animation-duration: 9s; }
+
+  /* Mobile */
+  @media (max-width: 700px) {
+    .header { padding: 20px 20px 0; }
+    .bottom { grid-template-columns: 1fr; padding: 0 20px 24px; gap: 14px; }
+    .snaps-area { align-items: flex-start; }
+    .center { padding: 20px; }
+    .mood-label { font-size: 20vw; }
+  }
+</style>
+</head>
+<body>
+
+<canvas id="canvas"></canvas>
+<div id="orb1" class="orb"></div>
+<div id="orb2" class="orb"></div>
+<div id="orb3" class="orb"></div>
+<div class="noise"></div>
+<div class="scan"></div>
+
+<div id="cursor"></div>
+<div id="cursor-ring"></div>
+
+<div class="ui">
+  <div class="header">
+    <div>
+      <div class="logo-text">MOODSYNTH</div>
+      <div class="logo-sub">// Atmosphere Generator — v1.0</div>
+    </div>
+    <div class="header-right">
+      <div id="live-time">00:00:00</div>
+      <div id="live-date">—</div>
+      <div style="margin-top:6px;" id="active-mood-label">— SELECT A MOOD —</div>
+    </div>
+  </div>
+
+  <div class="center">
+    <div class="mood-label" id="mood-bg-text">VOID</div>
+    <div class="quote-wrap">
+      <span class="quote-mark">"</span>
+      <div class="quote-text" id="quote-text">Choose a mood below and synthesize your atmosphere.</div>
+      <div class="quote-author" id="quote-author">— MOODSYNTH</div>
+    </div>
+    <div class="palette-strip" id="palette-strip"></div>
+  </div>
+
+  <div class="bottom">
+    <div class="mood-grid" id="mood-grid"></div>
+    <button class="synth-btn" onclick="synthesize()"><span>⟳ SYNTHESIZE</span></button>
+    <div class="snaps-area">
+      <div class="snaps-label">Saved Moods</div>
+      <div class="snaps-row" id="snaps-row">
+        <span style="font-size:0.55rem;letter-spacing:0.1em;color:rgba(255,255,255,0.15);">none yet</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ─── DATA ───────────────────────────────────────────────────────────────────
+
+const MOODS = {
+  LIMINAL: {
+    colors: ['#e8e4e0','#c9b99a','#8b7d6b','#4a4040','#1a1510'],
+    quotes: [
+      { text: "You are always in the middle of something that hasn't ended yet.", author: "Anonymous" },
+      { text: "The hallway is not the destination. But you must walk it.", author: "Unknown" },
+      { text: "Between what was and what will be, there is only this.", author: "Anonymous" },
+      { text: "A waiting room with no appointment scheduled.", author: "Liminal Studies" },
+    ],
+    particles: { color: '#c9b99a', count: 60, speed: 0.2, size: 1.5 },
+    orbOpacity: [0.07, 0.05, 0.03],
+  },
+  DRIFT: {
+    colors: ['#00b4d8','#0077b6','#023e8a','#03045e','#90e0ef'],
+    quotes: [
+      { text: "Let the current decide. You were never in control anyway.", author: "Tao Te Ching" },
+      { text: "Some days you float. Some days you sink. Both are swimming.", author: "Anonymous" },
+      { text: "The ocean doesn't aplogize for its depth.", author: "Unknown" },
+      { text: "Adrift is not lost. It is free.", author: "Anonymous" },
+    ],
+    particles: { color: '#90e0ef', count: 80, speed: 0.4, size: 1.8 },
+    orbOpacity: [0.06, 0.1, 0.04],
+  },
+  VOLTAGE: {
+    colors: ['#f72585','#b5179e','#7209b7','#560bad','#480ca8'],
+    quotes: [
+      { text: "Every great fire begins as a spark that refused to die.", author: "Anonymous" },
+      { text: "There is a kind of electricity that lives inside the chest.", author: "Unknown" },
+      { text: "Move fast. Leave light behind you.", author: "Anonymous" },
+      { text: "The ones who change things never asked permission.", author: "Unknown" },
+    ],
+    particles: { color: '#f72585', count: 120, speed: 1.2, size: 2 },
+    orbOpacity: [0.15, 0.08, 0.06],
+  },
+  GHOST: {
+    colors: ['#d4f1f4','#a8dadc','#457b9d','#1d3557','#0a0e1a'],
+    quotes: [
+      { text: "Not all who haunt are dead. Some are just very, very tired.", author: "Anonymous" },
+      { text: "She moved through rooms like fog — present, but never quite there.", author: "Unknown" },
+      { text: "I keep leaving traces in places I've already left.", author: "Anonymous" },
+      { text: "Memory is the ghost that lives in the body.", author: "Unknown" },
+    ],
+    particles: { color: '#a8dadc', count: 50, speed: 0.15, size: 1 },
+    orbOpacity: [0.04, 0.08, 0.06],
+  },
+  PULSE: {
+    colors: ['#80ffdb','#72efdd','#64dfdf','#48cae4','#023e8a'],
+    quotes: [
+      { text: "Alive means different things at 3am than it does at noon.", author: "Anonymous" },
+      { text: "Your heartbeat is the oldest rhythm you know.", author: "Unknown" },
+      { text: "Something about being awake in a sleeping world.", author: "Anonymous" },
+      { text: "The bass drop before the silence.", author: "Electronic Folklore" },
+    ],
+    particles: { color: '#80ffdb', count: 100, speed: 0.7, size: 2.5 },
+    orbOpacity: [0.05, 0.05, 0.12],
+  },
+  RUST: {
+    colors: ['#e76f51','#f4a261','#e9c46a','#264653','#2a1810'],
+    quotes: [
+      { text: "The beautiful thing about decay is how slow it is. How patient.", author: "Anonymous" },
+      { text: "Old things remember with their bodies.", author: "Unknown" },
+      { text: "Everything worth keeping shows its age.", author: "Anonymous" },
+      { text: "Warm light through dirty glass is still warm light.", author: "Unknown" },
+    ],
+    particles: { color: '#f4a261', count: 40, speed: 0.25, size: 1.5 },
+    orbOpacity: [0.12, 0.06, 0.08],
+  },
+  VOID: {
+    colors: ['#ffffff','#aaaaaa','#555555','#111111','#000000'],
+    quotes: [
+      { text: "At the center of the quiet is more quiet.", author: "Anonymous" },
+      { text: "You don't fall into the void. You realize you were always in it.", author: "Unknown" },
+      { text: "Nothing is not the absence of something. It is its own thing.", author: "Anonymous" },
+      { text: "The blankest canvas holds the most possibility.", author: "Unknown" },
+    ],
+    particles: { color: '#ffffff', count: 30, speed: 0.08, size: 1 },
+    orbOpacity: [0.03, 0.03, 0.03],
+  },
+  FEVER: {
+    colors: ['#ff4800','#ff6000','#ffaa00','#ffe000','#ff2200'],
+    quotes: [
+      { text: "Creation requires a kind of delirium.", author: "Anonymous" },
+      { text: "She burned too bright to last, but god, she burned.", author: "Unknown" },
+      { text: "Passion is just fever with a purpose.", author: "Anonymous" },
+      { text: "The heat in your hands means something is being made.", author: "Unknown" },
+    ],
+    particles: { color: '#ff6000', count: 150, speed: 1.5, size: 2.2 },
+    orbOpacity: [0.18, 0.04, 0.1],
+  },
+};
+
+// ─── STATE ──────────────────────────────────────────────────────────────────
+let currentMood = null;
+let savedSnaps = [];
+let particles = [];
+let animFrame = null;
+
+// ─── CANVAS PARTICLES ───────────────────────────────────────────────────────
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+function resizeCanvas() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+}
+resizeCanvas();
+window.addEventListener('resize', resizeCanvas);
+
+function spawnParticles(cfg) {
+  particles = [];
+  for (let i = 0; i < cfg.count; i++) {
+    particles.push({
+      x: Math.random() * canvas.width,
+      y: Math.random() * canvas.height,
+      vx: (Math.random() - 0.5) * cfg.speed,
+      vy: (Math.random() - 0.5) * cfg.speed,
+      size: Math.random() * cfg.size + 0.5,
+      opacity: Math.random() * 0.7 + 0.1,
+      color: cfg.color,
+      pulse: Math.random() * Math.PI * 2,
+    });
+  }
+}
+
+function drawParticles() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  const now = Date.now() / 1000;
+  particles.forEach(p => {
+    p.x += p.vx;
+    p.y += p.vy;
+    p.pulse += 0.02;
+    if (p.x < 0) p.x = canvas.width;
+    if (p.x > canvas.width) p.x = 0;
+    if (p.y < 0) p.y = canvas.height;
+    if (p.y > canvas.height) p.y = 0;
+
+    const glow = Math.sin(p.pulse) * 0.3 + 0.7;
+    ctx.save();
+    ctx.globalAlpha = p.opacity * glow;
+    ctx.shadowBlur = 8;
+    ctx.shadowColor = p.color;
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  });
+
+  // Draw faint connections
+  if (currentMood && MOODS[currentMood].particles.count < 100) {
+    for (let i = 0; i < particles.length; i++) {
+      for (let j = i+1; j < particles.length; j++) {
+        const dx = particles[i].x - particles[j].x;
+        const dy = particles[i].y - particles[j].y;
+        const dist = Math.sqrt(dx*dx + dy*dy);
+        if (dist < 120) {
+          ctx.save();
+          ctx.globalAlpha = (1 - dist/120) * 0.08;
+          ctx.strokeStyle = particles[i].color;
+          ctx.lineWidth = 0.5;
+          ctx.beginPath();
+          ctx.moveTo(particles[i].x, particles[i].y);
+          ctx.lineTo(particles[j].x, particles[j].y);
+          ctx.stroke();
+          ctx.restore();
+        }
+      }
+    }
+  }
+
+  animFrame = requestAnimationFrame(drawParticles);
+}
+
+// ─── CSS VAR HELPERS ────────────────────────────────────────────────────────
+function setCSSVars(colors, hexPrimary) {
+  document.documentElement.style.setProperty('--a', colors[0]);
+  document.documentElement.style.setProperty('--b', colors[2]);
+  document.documentElement.style.setProperty('--c', colors[4] || colors[1]);
+  document.documentElement.style.setProperty('--glow-a', hexToRgba(colors[0], 0.4));
+  document.documentElement.style.setProperty('--glow-b', hexToRgba(colors[2], 0.4));
+  document.documentElement.style.setProperty('--glow-c', hexToRgba(colors[4] || colors[1], 0.4));
+}
+
+function hexToRgba(hex, alpha) {
+  const r = parseInt(hex.slice(1,3),16);
+  const g = parseInt(hex.slice(3,5),16);
+  const b = parseInt(hex.slice(5,7),16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+// ─── APPLY MOOD ─────────────────────────────────────────────────────────────
+function applyMood(moodKey, customQuote) {
+  const m = MOODS[moodKey];
+  currentMood = moodKey;
+
+  // CSS vars
+  setCSSVars(m.colors, m.colors[0]);
+
+  // Orbs
+  document.getElementById('orb1').style.opacity = m.orbOpacity[0];
+  document.getElementById('orb2').style.opacity = m.orbOpacity[1];
+  document.getElementById('orb3').style.opacity = m.orbOpacity[2];
+
+  // Mood bg text
+  const mbl = document.getElementById('mood-bg-text');
+  mbl.textContent = moodKey;
+  mbl.classList.add('glow-active');
+
+  // Active label
+  document.getElementById('active-mood-label').textContent = `// ${moodKey} MODE`;
+
+  // Active button
+  document.querySelectorAll('.mood-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.mood === moodKey);
+  });
+
+  // Palette
+  const strip = document.getElementById('palette-strip');
+  strip.innerHTML = m.colors.map(c => `
+    <div class="pal-chip" onclick="navigator.clipboard.writeText('${c}');showToast('${c} copied')">
+      <div class="pal-swatch" style="background:${c};box-shadow:0 0 12px ${hexToRgba(c,0.6)}"></div>
+      <span class="pal-hex">${c}</span>
+    </div>
+  `).join('');
+
+  // Quote
+  const q = customQuote || m.quotes[Math.floor(Math.random() * m.quotes.length)];
+  const qEl = document.getElementById('quote-text');
+  qEl.classList.add('fading');
+  setTimeout(() => {
+    qEl.textContent = q.text;
+    document.getElementById('quote-author').textContent = `— ${q.author}`;
+    qEl.classList.remove('fading');
+  }, 300);
+
+  // Particles
+  if (animFrame) cancelAnimationFrame(animFrame);
+  spawnParticles(m.particles);
+  drawParticles();
+}
+
+// ─── SYNTHESIZE (random quote within current mood) ──────────────────────────
+function synthesize() {
+  if (!currentMood) {
+    // Pick random mood
+    const keys = Object.keys(MOODS);
+    currentMood = keys[Math.floor(Math.random() * keys.length)];
+  }
+  applyMood(currentMood);
+
+  // Ripple effect
+  const btn = document.querySelector('.synth-btn');
+  const r = document.createElement('div');
+  r.className = 'ripple';
+  const rect = btn.getBoundingClientRect();
+  r.style.cssText = `left:${rect.left + rect.width/2}px;top:${rect.top + rect.height/2}px;width:60px;height:60px;border-color:${MOODS[currentMood].colors[0]};`;
+  document.body.appendChild(r);
+  setTimeout(() => r.remove(), 900);
+}
+
+// ─── SAVE SNAP ──────────────────────────────────────────────────────────────
+function saveSnap() {
+  if (!currentMood) return;
+  const m = MOODS[currentMood];
+  const q = document.getElementById('quote-text').textContent;
+  const snap = { mood: currentMood, color: m.colors[0], quote: q, time: new Date().toLocaleTimeString() };
+  savedSnaps.unshift(snap);
+  if (savedSnaps.length > 8) savedSnaps.pop();
+  renderSnaps();
+  showToast('Mood saved ✦');
+}
+
+function renderSnaps() {
+  const row = document.getElementById('snaps-row');
+  if (!savedSnaps.length) {
+    row.innerHTML = '<span style="font-size:0.55rem;letter-spacing:0.1em;color:rgba(255,255,255,0.15);">none yet</span>';
+    return;
+  }
+  row.innerHTML = savedSnaps.map((s,i) => `
+    <div class="snap-dot" style="background:${s.color};box-shadow:0 0 8px ${hexToRgba(s.color,0.5)}"
+         onclick="loadSnap(${i})">
+      <div class="snap-tooltip">${s.mood} · ${s.time}</div>
+    </div>
+  `).join('');
+}
+
+function loadSnap(i) {
+  const s = savedSnaps[i];
+  applyMood(s.mood, { text: s.quote, author: s.mood });
+  showToast(`Restored: ${s.mood}`);
+}
+
+// ─── TOAST ──────────────────────────────────────────────────────────────────
+let toastTimer;
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 2200);
+}
+
+// ─── BUILD MOOD BUTTONS ──────────────────────────────────────────────────────
+const grid = document.getElementById('mood-grid');
+Object.keys(MOODS).forEach(key => {
+  const btn = document.createElement('button');
+  btn.className = 'mood-btn';
+  btn.dataset.mood = key;
+  btn.textContent = key;
+  btn.onclick = () => applyMood(key);
+  grid.appendChild(btn);
+});
+
+// Save snap button (inject after mood grid)
+const saveBtn = document.createElement('button');
+saveBtn.className = 'mood-btn';
+saveBtn.textContent = '✦ SAVE';
+saveBtn.style.borderColor = 'rgba(255,255,255,0.2)';
+saveBtn.onclick = saveSnap;
+grid.appendChild(saveBtn);
+
+// ─── CURSOR ──────────────────────────────────────────────────────────────────
+const cur = document.getElementById('cursor');
+const ring = document.getElementById('cursor-ring');
+let mx = 0, my = 0, rx = 0, ry = 0;
+
+document.addEventListener('mousemove', e => {
+  mx = e.clientX; my = e.clientY;
+  cur.style.left = mx + 'px';
+  cur.style.top = my + 'px';
+  ring.style.left = mx + 'px';
+  ring.style.top = my + 'px';
+});
+
+document.addEventListener('click', e => {
+  const r = document.createElement('div');
+  r.className = 'ripple';
+  r.style.cssText = `left:${e.clientX}px;top:${e.clientY}px;width:40px;height:40px;border-color:${getComputedStyle(document.documentElement).getPropertyValue('--a').trim()};`;
+  document.body.appendChild(r);
+  setTimeout(() => r.remove(), 900);
+});
+
+// ─── CLOCK ──────────────────────────────────────────────────────────────────
+function updateClock() {
+  const n = new Date();
+  document.getElementById('live-time').textContent =
+    n.toLocaleTimeString('en-US', { hour12: false, hour:'2-digit', minute:'2-digit', second:'2-digit' });
+  document.getElementById('live-date').textContent =
+    n.toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric' }).toUpperCase();
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+// ─── KEYBOARD SHORTCUTS ──────────────────────────────────────────────────────
+const moodKeys = Object.keys(MOODS);
+document.addEventListener('keydown', e => {
+  const idx = parseInt(e.key) - 1;
+  if (!isNaN(idx) && moodKeys[idx]) { applyMood(moodKeys[idx]); return; }
+  if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); synthesize(); }
+  if (e.key === 's' || e.key === 'S') saveSnap();
+});
+
+// ─── INIT ───────────────────────────────────────────────────────────────────
+// Start idle particle field
+spawnParticles({ color: '#ffffff', count: 20, speed: 0.1, size: 1 });
+drawParticles();
+
+// Hint
+setTimeout(() => showToast('Press 1–8 to switch moods · SPACE to synthesize'), 1200);
+</script>
+</body>
+</html>
